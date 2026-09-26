@@ -1,7 +1,7 @@
 import { useState, useRef, ChangeEvent, createContext, useContext } from "react";
 import { GoogleGenAI } from "@google/genai";
 import { asBlob } from "html-docx-js-typescript";
-import { Upload, FileText, Loader2, CheckCircle, AlertCircle, RefreshCw, Copy, Check, Edit2, Save, FileSpreadsheet, FileDown, Key, ExternalLink, X } from "lucide-react";
+import { Upload, FileText, Loader2, CheckCircle, AlertCircle, RefreshCw, Copy, Check, Edit2, Save, FileSpreadsheet, FileDown, Key, ExternalLink, X, Plus, Trash2, Layers, ShieldCheck } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -129,6 +129,26 @@ const processHtmlForDocx = async (element: HTMLElement): Promise<string> => {
   return clone.innerHTML;
 };
 
+// Đọc danh sách API key từ localStorage hoặc biến môi trường
+const loadSavedApiKeys = (): string[] => {
+  try {
+    const saved = localStorage.getItem("GEMINI_API_KEYS");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((k: string) => String(k).trim()).filter(Boolean);
+      }
+    }
+    const single = localStorage.getItem("GEMINI_API_KEY") || (process.env.GEMINI_API_KEY as string) || "";
+    if (single) {
+      return single.split(/[\n,;]+/).map((k: string) => k.trim()).filter(Boolean);
+    }
+  } catch (e) {
+    console.error("Lỗi khi đọc danh sách API keys:", e);
+  }
+  return [];
+};
+
 export default function App() {
   const [fileName, setFileName] = useState("");
   const [fileData, setFileData] = useState<string | null>(null);
@@ -166,24 +186,75 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState("Đang xử lý...");
   const [activeModel, setActiveModel] = useState<string | null>(null);
+  const [usedKeyInfo, setUsedKeyInfo] = useState<string | null>(null);
   const [isCached, setIsCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem("GEMINI_API_KEY") || (process.env.GEMINI_API_KEY as string) || "");
+  
+  // Quản lý nhiều API Keys
+  const [apiKeys, setApiKeys] = useState<string[]>(loadSavedApiKeys);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [tempApiKey, setTempApiKey] = useState<string>(() => localStorage.getItem("GEMINI_API_KEY") || (process.env.GEMINI_API_KEY as string) || "");
+  const [newKeySingle, setNewKeySingle] = useState("");
+  const [bulkKeyInput, setBulkKeyInput] = useState("");
+  const [keyInputTab, setKeyInputTab] = useState<"single" | "bulk">("bulk");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const specFileInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  const handleSaveApiKey = () => {
-    const trimmed = tempApiKey.trim();
-    setApiKey(trimmed);
-    if (trimmed) {
-      localStorage.setItem("GEMINI_API_KEY", trimmed);
+  const maskKey = (key: string) => {
+    if (!key) return "";
+    if (key.length <= 10) return "••••••••";
+    return key.substring(0, 6) + "..." + key.substring(key.length - 4);
+  };
+
+  const handleAddSingleKey = () => {
+    const trimmed = newKeySingle.trim();
+    if (!trimmed) return;
+    if (apiKeys.includes(trimmed)) {
+      alert("API Key này đã tồn tại trong danh sách.");
+      return;
+    }
+    const updated = [...apiKeys, trimmed];
+    setApiKeys(updated);
+    localStorage.setItem("GEMINI_API_KEYS", JSON.stringify(updated));
+    localStorage.setItem("GEMINI_API_KEY", updated[0]);
+    setNewKeySingle("");
+  };
+
+  const handleAddBulkKeys = () => {
+    if (!bulkKeyInput.trim()) return;
+    const incoming = bulkKeyInput
+      .split(/[\n,;]+/)
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    const merged = Array.from(new Set([...apiKeys, ...incoming]));
+    setApiKeys(merged);
+    localStorage.setItem("GEMINI_API_KEYS", JSON.stringify(merged));
+    if (merged.length > 0) {
+      localStorage.setItem("GEMINI_API_KEY", merged[0]);
+    }
+    setBulkKeyInput("");
+  };
+
+  const handleRemoveKey = (indexToRemove: number) => {
+    const updated = apiKeys.filter((_, idx) => idx !== indexToRemove);
+    setApiKeys(updated);
+    localStorage.setItem("GEMINI_API_KEYS", JSON.stringify(updated));
+    if (updated.length > 0) {
+      localStorage.setItem("GEMINI_API_KEY", updated[0]);
     } else {
       localStorage.removeItem("GEMINI_API_KEY");
+      localStorage.removeItem("GEMINI_API_KEYS");
     }
-    setShowApiKeyModal(false);
+  };
+
+  const handleClearAllKeys = () => {
+    if (window.confirm("Bạn có chắc chắn muốn xóa toàn bộ danh sách API Key đã lưu?")) {
+      setApiKeys([]);
+      localStorage.removeItem("GEMINI_API_KEYS");
+      localStorage.removeItem("GEMINI_API_KEY");
+    }
   };
 
   const examTypes = [
@@ -371,9 +442,12 @@ export default function App() {
       validationErrors.push("• Tổng số điểm phải lớn hơn 0.");
     }
 
-    const effectiveApiKey = apiKey.trim() || localStorage.getItem("GEMINI_API_KEY") || (process.env.GEMINI_API_KEY as string) || "";
-    if (!effectiveApiKey) {
-      validationErrors.push("• Vui lòng nhập Gemini API Key để tiếp tục. Nhấn vào nút 'Cài đặt API Key' ở đầu trang.");
+    const effectiveKeys = apiKeys.length > 0 
+      ? apiKeys 
+      : ((process.env.GEMINI_API_KEY as string) || "").split(/[\n,;]+/).map((k: string) => k.trim()).filter(Boolean);
+
+    if (effectiveKeys.length === 0) {
+      validationErrors.push("• Vui lòng cấu hình ít nhất một Gemini API Key để tiếp tục. Nhấn vào nút 'Quản lý API Key' ở đầu trang.");
       setShowApiKeyModal(true);
     }
 
@@ -385,6 +459,7 @@ export default function App() {
     setLoading(true);
     setLoadingStatus("Đang kiểm tra và chuẩn bị dữ liệu...");
     setActiveModel(null);
+    setUsedKeyInfo(null);
     setIsCached(false);
     setError(null);
     setLessonPlan("");
@@ -630,7 +705,8 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
       let successfullyUsedModel: string | null = null;
       let usedCacheSuccess = false;
 
-      const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
+      let currentKeyIdx = 0;
+      let usedKeyIndexSuccess: number | null = null;
 
       // Vòng lặp try-catch qua mảng các model theo thứ tự ưu tiên
       for (const targetModel of MODEL_PRIORITY_LIST) {
@@ -638,82 +714,110 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
         let candidateSucceeded = false;
 
         for (const currentModel of candidateModels) {
-          try {
-            console.log(`[AI Engine] Đang thử kết nối mô hình: ${currentModel}`);
-            setLoadingStatus(`Đang kết nối mô hình ${currentModel}...`);
+          let keyAttempts = 0;
+          const maxKeyAttempts = effectiveKeys.length;
 
-            let cachedContentName: string | null = null;
+          while (keyAttempts < maxKeyAttempts) {
+            const currentApiKey = effectiveKeys[currentKeyIdx];
+            const ai = new GoogleGenAI({ apiKey: currentApiKey });
+            const keyLabel = effectiveKeys.length > 1 ? `Key #${currentKeyIdx + 1}/${effectiveKeys.length}` : `Key duy nhất`;
 
-            // Setup Cache: Nếu Text quá dài (> 110.000 ký tự), gọi caches.create() (TTL 3600s)
-            if (isLargeInput) {
-              try {
-                setLoadingStatus(`Đang nén bộ nhớ đệm Context Cache (TTL: 3600s) cho ${currentModel}...`);
-                const cache = await ai.caches.create({
+            try {
+              console.log(`[AI Engine] Đang thử kết nối mô hình: ${currentModel} với ${keyLabel}`);
+              setLoadingStatus(`Đang kết nối mô hình ${currentModel} (${keyLabel})...`);
+
+              let cachedContentName: string | null = null;
+
+              // Setup Cache: Nếu Text quá dài (> 110.000 ký tự), gọi caches.create() (TTL 3600s)
+              if (isLargeInput) {
+                try {
+                  setLoadingStatus(`Đang nén bộ nhớ đệm Context Cache (TTL: 3600s) cho ${currentModel} (${keyLabel})...`);
+                  const cache = await ai.caches.create({
+                    model: currentModel,
+                    config: {
+                      contents: [
+                        {
+                          role: "user",
+                          parts: parts,
+                        },
+                      ],
+                      displayName: `exam_context_cache_${Date.now()}`,
+                      ttl: "3600s",
+                    },
+                  });
+
+                  if (cache?.name) {
+                    cachedContentName = cache.name;
+                    console.log(`[Context Caching Engine] Cache thành công với ID: ${cache.name} (${keyLabel}).`);
+                  }
+                } catch (cacheErr: any) {
+                  console.warn(`[Context Caching Engine] Khởi tạo Cache không thành công cho ${currentModel} (${keyLabel}): ${cacheErr?.message || cacheErr}.`);
+                }
+              }
+
+              setLoadingStatus(`Mô hình ${currentModel} (${keyLabel}) đang phân tích và tạo 5 phần hồ sơ...`);
+
+              let response;
+              if (cachedContentName) {
+                console.log(`[AI Engine] Rẽ nhánh Cache: Gửi yêu cầu rút gọn kèm cachedContent tới ${currentModel} (${keyLabel}).`);
+                response = await ai.models.generateContent({
                   model: currentModel,
+                  contents: "Hãy sinh kết quả dựa trên Cache, thực hiện đầy đủ và chính xác 5 PHẦN theo đúng yêu cầu đã lưu trong Cache.",
                   config: {
-                    contents: [
-                      {
-                        role: "user",
-                        parts: parts,
-                      },
-                    ],
-                    displayName: `exam_context_cache_${Date.now()}`,
-                    ttl: "3600s",
+                    cachedContent: cachedContentName,
                   },
                 });
+                usedCacheSuccess = true;
+              } else {
+                console.log(`[AI Engine] Rẽ nhánh Truyền thống: Gửi toàn bộ Prompt đầy đủ tới ${currentModel} (${keyLabel}).`);
+                response = await ai.models.generateContent({
+                  model: currentModel,
+                  contents: [
+                    {
+                      role: "user",
+                      parts: parts,
+                    },
+                  ],
+                });
+                usedCacheSuccess = false;
+              }
 
-                if (cache?.name) {
-                  cachedContentName = cache.name;
-                  console.log(`[Context Caching Engine] Cache thành công với ID: ${cache.name} cho mô hình ${currentModel}.`);
+              const resText = response.text;
+              if (resText && resText.trim().length > 0) {
+                generatedResponseText = resText;
+                successfullyUsedModel = currentModel;
+                usedKeyIndexSuccess = currentKeyIdx;
+                candidateSucceeded = true;
+                console.log(`[AI Engine] Thành công tạo nội dung với mô hình: ${currentModel} bằng ${keyLabel}`);
+                break;
+              } else {
+                throw new Error(`Mô hình ${currentModel} trả về dữ liệu rỗng.`);
+              }
+            } catch (err: any) {
+              lastError = err;
+              const errStr = (err?.status || err?.message || String(err)).toLowerCase();
+              const isQuotaError = errStr.includes("429") || errStr.includes("quota") || errStr.includes("resource_exhausted") || errStr.includes("exhausted") || errStr.includes("rate");
+
+              if (isQuotaError && effectiveKeys.length > 1 && keyAttempts < maxKeyAttempts - 1) {
+                const nextKeyIdx = (currentKeyIdx + 1) % effectiveKeys.length;
+                console.warn(`[API Key Failover] ${keyLabel} chạm hạn mức (429/Quota). Tự động chuyển sang Key #${nextKeyIdx + 1}...`);
+                setLoadingStatus(`${keyLabel} chạm hạn mức (429), tự động đổi sang Key #${nextKeyIdx + 1}...`);
+                currentKeyIdx = nextKeyIdx;
+                keyAttempts++;
+                continue;
+              } else {
+                console.warn(`[AI Engine] Model ${currentModel} (${keyLabel}) báo lỗi (${err?.status || err?.message || err}).`);
+                setLoadingStatus(`Model ${currentModel} quá tải/bận, tự động chuyển sang model tiếp theo...`);
+                if (effectiveKeys.length > 1) {
+                  currentKeyIdx = (currentKeyIdx + 1) % effectiveKeys.length;
                 }
-              } catch (cacheErr: any) {
-                console.warn(`[Context Caching Engine] Khởi tạo Cache không thành công cho ${currentModel}: ${cacheErr?.message || cacheErr}. Tự động trở về chế độ gửi Prompt đầy đủ theo cách truyền thống.`);
+                break;
               }
             }
+          }
 
-            setLoadingStatus(`Mô hình ${currentModel} đang phân tích và tạo 5 phần hồ sơ...`);
-
-            let response;
-            if (cachedContentName) {
-              // Rẽ nhánh: Nếu Cache thành công
-              console.log(`[AI Engine] Rẽ nhánh Cache: Gửi yêu cầu rút gọn kèm cachedContent tới ${currentModel}.`);
-              response = await ai.models.generateContent({
-                model: currentModel,
-                contents: "Hãy sinh kết quả dựa trên Cache, thực hiện đầy đủ và chính xác 5 PHẦN theo đúng yêu cầu đã lưu trong Cache.",
-                config: {
-                  cachedContent: cachedContentName,
-                },
-              });
-              usedCacheSuccess = true;
-            } else {
-              // Rẽ nhánh: Nếu Cache thất bại / Dung lượng file nhỏ
-              console.log(`[AI Engine] Rẽ nhánh Truyền thống: Gửi toàn bộ Prompt đầy đủ tới ${currentModel}.`);
-              response = await ai.models.generateContent({
-                model: currentModel,
-                contents: [
-                  {
-                    role: "user",
-                    parts: parts,
-                  },
-                ],
-              });
-              usedCacheSuccess = false;
-            }
-
-            const resText = response.text;
-            if (resText && resText.trim().length > 0) {
-              generatedResponseText = resText;
-              successfullyUsedModel = currentModel;
-              candidateSucceeded = true;
-              console.log(`[AI Engine] Thành công tạo nội dung với mô hình: ${currentModel}`);
-              break;
-            } else {
-              throw new Error(`Mô hình ${currentModel} trả về dữ liệu rỗng.`);
-            }
-          } catch (err: any) {
-            lastError = err;
-            console.warn(`[AI Engine] Model ${currentModel} báo lỗi (${err?.status || err?.message || err}). Tự động chuyển mượt mà sang thử model tiếp theo mà không gián đoạn trải nghiệm...`);
-            setLoadingStatus(`Model ${currentModel} quá tải/bận, tự động chuyển sang model tiếp theo...`);
+          if (candidateSucceeded) {
+            break;
           }
         }
 
@@ -723,10 +827,13 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
       }
 
       if (!generatedResponseText) {
-        throw lastError || new Error("Tất cả các mô hình trong danh sách ưu tiên đều không thể tạo nội dung. Vui lòng kiểm tra lại kết nối hoặc khóa API.");
+        throw lastError || new Error("Tất cả các mô hình trong danh sách ưu tiên đều không thể tạo nội dung. Vui lòng kiểm tra lại kết nối hoặc danh sách khóa API.");
       }
 
       setActiveModel(successfullyUsedModel);
+      if (usedKeyIndexSuccess !== null) {
+        setUsedKeyInfo(`Key #${usedKeyIndexSuccess + 1}/${effectiveKeys.length} (${maskKey(effectiveKeys[usedKeyIndexSuccess])})`);
+      }
       setIsCached(usedCacheSuccess);
 
       const text = generatedResponseText || "Không tạo được nội dung.";
@@ -779,26 +886,27 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
           
           <div className="flex items-center justify-center">
             <button
-              onClick={() => {
-                setTempApiKey(apiKey);
-                setShowApiKeyModal(true);
-              }}
+              onClick={() => setShowApiKeyModal(true)}
               className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-semibold border shadow-sm transition-all hover:scale-[1.02] active:scale-95 ${
-                apiKey
+                apiKeys.length > 0
                   ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
                   : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 ring-2 ring-amber-400/30 animate-pulse"
               }`}
             >
               <Key className="w-5 h-5 text-indigo-600" />
               <div className="text-left">
-                <div className="text-[11px] text-slate-500 font-normal leading-none">Cấu hình Google AI</div>
-                <div className="font-bold">{apiKey ? "API Key: Đã kết nối ✓" : "Nhập Gemini API Key"}</div>
+                <div className="text-[11px] text-slate-500 font-normal leading-none">Google Gemini API</div>
+                <div className="font-bold">
+                  {apiKeys.length === 0 && "Cấu hình Gemini API Key"}
+                  {apiKeys.length === 1 && "API Key: 1 key sẵn sàng ✓"}
+                  {apiKeys.length > 1 && `API Key: ${apiKeys.length} keys (Tự động luân phiên) ✓`}
+                </div>
               </div>
             </button>
           </div>
         </header>
 
-        {/* Modal Cấu hình API Key */}
+        {/* Modal Quản lý nhiều API Keys */}
         <AnimatePresence>
           {showApiKeyModal && (
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -806,12 +914,12 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-w-md w-full space-y-4"
+                className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-w-lg w-full space-y-5 max-h-[90vh] overflow-y-auto"
               >
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center border-b pb-3">
                   <div className="flex items-center gap-2 text-indigo-900 font-bold text-lg">
                     <Key className="w-5 h-5 text-indigo-600" />
-                    <span>Cấu hình Gemini API Key</span>
+                    <span>Quản lý Gemini API Keys</span>
                   </div>
                   <button
                     onClick={() => setShowApiKeyModal(false)}
@@ -820,40 +928,155 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
                     <X className="w-5 h-5" />
                   </button>
                 </div>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Nhập khóa API Google Gemini để hệ thống phân tích phụ lục và tạo đề thi theo Công văn 7991. Khóa được lưu an toàn trực tiếp trên trình duyệt của bạn.
-                </p>
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-700">Gemini API Key:</label>
-                  <input
-                    type="password"
-                    value={tempApiKey}
-                    onChange={(e) => setTempApiKey(e.target.value)}
-                    placeholder="Dán mã API Key (AIzaSy...)"
-                    className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+
+                {/* Banner trạng thái */}
+                {apiKeys.length > 0 ? (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Đang có <strong>{apiKeys.length}</strong> API key hoạt động. Hệ thống sẽ <strong>tự động luân phiên sang key khác</strong> nếu một key chạm giới hạn tốc độ (Rate Limit 429).
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleClearAllKeys}
+                      className="text-xs text-red-600 hover:text-red-700 font-semibold underline shrink-0 px-2 py-1 hover:bg-red-50 rounded"
+                    >
+                      Xóa hết
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Chưa có API key nào. Vui lòng nhập ít nhất một key để hệ thống có thể tạo đề.</span>
+                  </div>
+                )}
+
+                {/* Tab chuyển đổi chế độ nhập */}
+                <div className="space-y-3">
+                  <div className="flex gap-2 p-1 bg-slate-100 rounded-xl text-xs font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setKeyInputTab("bulk")}
+                      className={`flex-1 py-1.5 rounded-lg transition-all ${
+                        keyInputTab === "bulk"
+                          ? "bg-white text-indigo-700 shadow-sm font-bold"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Dán nhiều key cùng lúc (Mỗi dòng 1 key)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKeyInputTab("single")}
+                      className={`flex-1 py-1.5 rounded-lg transition-all ${
+                        keyInputTab === "single"
+                          ? "bg-white text-indigo-700 shadow-sm font-bold"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Thêm từng key
+                    </button>
+                  </div>
+
+                  {keyInputTab === "bulk" ? (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-700 block">
+                        Dán danh sách API Keys (Mỗi dòng 1 key hoặc cách nhau bởi dấu phẩy):
+                      </label>
+                      <textarea
+                        value={bulkKeyInput}
+                        onChange={(e) => setBulkKeyInput(e.target.value)}
+                        placeholder={`AIzaSyA...\nAIzaSyB...\nAIzaSyC...`}
+                        className="w-full h-28 p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddBulkKeys}
+                        disabled={!bulkKeyInput.trim()}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-medium rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Thêm toàn bộ danh sách key vào hệ thống</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-700 block">
+                        Nhập một API Key mới:
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={newKeySingle}
+                          onChange={(e) => setNewKeySingle(e.target.value)}
+                          placeholder="Dán mã API Key (AIzaSy...)"
+                          className="flex-1 p-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddSingleKey}
+                          disabled={!newKeySingle.trim()}
+                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-medium rounded-xl text-xs flex items-center gap-1 transition-all shadow-sm shrink-0"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Thêm</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Danh sách keys đã lưu */}
+                {apiKeys.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Danh sách Keys đã lưu ({apiKeys.length}):
+                      </span>
+                    </div>
+                    <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1">
+                      {apiKeys.map((k, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50/40 text-xs transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-bold text-[10px]">
+                              #{idx + 1}
+                            </span>
+                            <span className="font-mono text-slate-700 font-medium">{maskKey(k)}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveKey(idx)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Xóa key này"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t">
                   <a
                     href="https://aistudio.google.com/app/apikey"
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 mt-1 font-medium"
+                    className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium"
                   >
                     <span>Lấy API Key miễn phí tại Google AI Studio</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
-                </div>
-                <div className="flex justify-end gap-3 pt-2">
                   <button
+                    type="button"
                     onClick={() => setShowApiKeyModal(false)}
-                    className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl"
+                    className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-medium rounded-xl text-xs transition-colors shadow-sm"
                   >
                     Đóng
-                  </button>
-                  <button
-                    onClick={handleSaveApiKey}
-                    className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow-sm"
-                  >
-                    Lưu cấu hình
                   </button>
                 </div>
               </motion.div>
@@ -1150,8 +1373,13 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
                   </div>
                   <div>
                     <div className="text-xs text-slate-500 font-medium">Mô hình AI hoàn thành:</div>
-                    <div className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <div className="text-sm font-bold text-slate-800 flex flex-wrap items-center gap-2">
                       <span>{activeModel || "Tối ưu hóa đa mô hình"}</span>
+                      {usedKeyInfo && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          🔑 {usedKeyInfo}
+                        </span>
+                      )}
                       {isCached && (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
                           ⚡ Đã tối ưu Context Cache
