@@ -7,19 +7,21 @@
 
 ## 🌟 Tính Năng Nổi Bật
 
-1. **Khung Kế hoạch bài dạy (Phần 1)**: Xây dựng mục tiêu (kiến thức, năng lực, phẩm chất), thiết bị dạy học, tiến trình bài dạy bám sát nội dung Phụ lục 3.
-2. **Ma trận đề kiểm tra (Phần 2)**: Chuẩn bảng HTML định dạng rowspan/colspan phân bổ chuẩn 3 mức độ nhận thức (Biết - Hiểu - Vận dụng) với tổng tỉ lệ khớp tuyệt đối 100%.
-3. **Bản đặc tả đề kiểm tra (Phần 3)**: Tách bạch rõ ràng Yêu cầu cần đạt theo từng mức độ (Biết - Hiểu - Vận dụng) và vị trí câu hỏi tương ứng.
-4. **Bộ đề kiểm tra chuẩn format mới (Phần 4 & Phần 5)**:
+1. **Tài liệu Sách giáo khoa (SGK) chuẩn**: Cho phép tải lên các chương, bài học từ file SGK (PDF, Word, TXT). AI sẽ bám sát 100% kiến thức, định nghĩa, số liệu, ngữ liệu và ví dụ minh họa chính xác từ SGK.
+2. **Khung Kế hoạch bài dạy (Phần 1)**: Xây dựng mục tiêu (kiến thức, năng lực, phẩm chất), thiết bị dạy học, tiến trình bài dạy bám sát nội dung Phụ lục 3.
+3. **Ma trận đề kiểm tra (Phần 2)**: Chuẩn bảng HTML định dạng rowspan/colspan phân bổ chuẩn 3 mức độ nhận thức (Biết - Hiểu - Vận dụng) với tổng tỉ lệ khớp tuyệt đối 100%.
+4. **Bản đặc tả đề kiểm tra (Phần 3)**: Tách bạch rõ ràng Yêu cầu cần đạt theo từng mức độ (Biết - Hiểu - Vận dụng) và vị trí câu hỏi tương ứng.
+5. **Bộ đề kiểm tra chuẩn format mới (Phần 4 & Phần 5)**:
    - **Phần I**: Trắc nghiệm nhiều phương án lựa chọn (4 lựa chọn A, B, C, D trên từng dòng).
    - **Phần II**: Trắc nghiệm Đúng - Sai (mỗi câu 4 lệnh hỏi a, b, c, d; tính điểm chuẩn Bộ GDĐT).
    - **Phần III**: Trắc nghiệm trả lời ngắn (kết quả ngắn gọn, số hoặc đơn vị).
    - **Phần IV**: Tự luận (kèm bảng ma trận barem chấm chi tiết từng bước).
    - Đề số 2 tương đương hoàn toàn về cấu trúc và độ khó.
-5. **Hỗ trợ công thức Toán học & Hình học SVG**:
+6. **Quản lý nhiều API Key & Tự động xoay vòng (Failover Engine)**: Hỗ trợ dán hàng loạt API Key, tự động chuyển key khi gặp lỗi quá tải hạn ngạch (Rate Limit 429).
+7. **Hỗ trợ công thức Toán học & Hình học SVG**:
    - Trình bày công thức chuẩn LaTeX / KaTeX / MathType.
    - Minh họa hình vẽ trực quan bằng mã SVG chuẩn xác.
-6. **Xuất file nhanh chóng**:
+8. **Xuất file nhanh chóng**:
    - Xuất toàn bộ hồ sơ ra file Word (.docx) chuẩn font Times New Roman, hỗ trợ MathType.
    - Xuất bảng ma trận và đặc tả sang file Excel / Trang tính (.xlsx).
 
@@ -39,7 +41,7 @@
    ```
 
 2. **Cấu hình API Key:**
-   - Tạo file `.env.local` hoặc nhập trực tiếp API Key trên giao diện web:
+   - Tạo file `.env.local` hoặc nhập trực tiếp một hoặc nhiều API Key trên giao diện web:
      ```env
      GEMINI_API_KEY="AIzaSy..."
      ```

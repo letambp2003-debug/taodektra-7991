@@ -1,7 +1,7 @@
 import { useState, useRef, ChangeEvent, createContext, useContext } from "react";
 import { GoogleGenAI } from "@google/genai";
 import { asBlob } from "html-docx-js-typescript";
-import { Upload, FileText, Loader2, CheckCircle, AlertCircle, RefreshCw, Copy, Check, Edit2, Save, FileSpreadsheet, FileDown, Key, ExternalLink, X, Plus, Trash2, Layers, ShieldCheck } from "lucide-react";
+import { Upload, FileText, Loader2, CheckCircle, AlertCircle, RefreshCw, Copy, Check, Edit2, Save, FileSpreadsheet, FileDown, Key, ExternalLink, X, Plus, Trash2, Layers, ShieldCheck, BookOpen } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -196,9 +196,14 @@ export default function App() {
   const [newKeySingle, setNewKeySingle] = useState("");
   const [bulkKeyInput, setBulkKeyInput] = useState("");
   const [keyInputTab, setKeyInputTab] = useState<"single" | "bulk">("bulk");
+  const [sgkFileName, setSgkFileName] = useState("");
+  const [sgkFileData, setSgkFileData] = useState<string | null>(null);
+  const [sgkFileText, setSgkFileText] = useState<string | null>(null);
+  const [sgkMimeType, setSgkMimeType] = useState<string>("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const specFileInputRef = useRef<HTMLInputElement>(null);
+  const sgkFileInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   const maskKey = (key: string) => {
@@ -357,6 +362,75 @@ export default function App() {
 
   const triggerSpecFileInput = () => {
     specFileInputRef.current?.click();
+  };
+
+  const handleSgkFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 25 * 1024 * 1024) { // 25MB limit for SGK PDFs/DOCX
+        setError("File Sách giáo khoa (SGK) quá lớn. Vui lòng tải lên file nhỏ hơn 25MB.");
+        return;
+      }
+      
+      setSgkFileName(file.name);
+      setSgkMimeType(file.type);
+      setSgkFileText(null);
+      setError(null);
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64String = reader.result as string;
+        const base64Data = base64String.split(',')[1];
+        setSgkFileData(base64Data);
+
+        // Handle .docx files
+        if (file.name.endsWith('.docx')) {
+          try {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            setSgkFileText(result.value);
+          } catch (err) {
+            console.error("Error extracting text from docx SGK:", err);
+            setError("Không thể trích xuất văn bản từ file .docx SGK.");
+          }
+        }
+      };
+      reader.onerror = () => {
+        setError("Lỗi khi đọc file SGK. Vui lòng thử lại.");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const triggerSgkFileInput = () => {
+    sgkFileInputRef.current?.click();
+  };
+
+  const handleClearFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFileName("");
+    setFileData(null);
+    setFileText(null);
+    setMimeType("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleClearSpecFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSpecFileName("");
+    setSpecFileData(null);
+    setSpecFileText(null);
+    setSpecMimeType("");
+    if (specFileInputRef.current) specFileInputRef.current.value = "";
+  };
+
+  const handleClearSgkFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSgkFileName("");
+    setSgkFileData(null);
+    setSgkFileText(null);
+    setSgkMimeType("");
+    if (sgkFileInputRef.current) sgkFileInputRef.current.value = "";
   };
 
   const handleExportWordAll = async () => {
@@ -647,8 +721,9 @@ QUY ĐỊNH BẮT BUỘC CHO CẢ 2 ĐỀ:
         + Địa danh Việt Nam: Sử dụng tên gọi các đơn vị hành chính và phân vùng kinh tế mới nhất hiện hành (Ví dụ: Vùng Bắc Trung Bộ và Duyên hải miền Trung, Thành phố Thủ Đức). Nhất quán sử dụng từ "Biển Đông", "quần đảo Hoàng Sa", "quần đảo Trường Sa".
 23. NGUYÊN TẮC CHI TIẾT TUYỆT ĐỐI CỦA ĐỀ THI VÀ HƯỚNG DẪN CHẤM: BẮT BUỘC trình bày toàn bộ nội dung của các đề thi (tất cả các câu hỏi) và hướng dẫn chấm/đáp án một cách THẬT ĐẦY ĐỦ VÀ CHI TIẾT. TUYỆT ĐỐI KHÔNG được dùng các từ ngữ như "tương tự", "tương tự đề 1", "cách làm tương tự", "giống như trên"... để lược bớt hoặc rút gọn nội dung. Đây là nguyên tắc bắt buộc, mọi nội dung, lời giải đều phải được viết rõ ràng, trọn vẹn từ đầu đến cuối cho từng đề riêng biệt.
 24. TÁCH BIỆT ĐỀ THI VÀ ĐÁP ÁN: Ở phần đề thi (PHẦN 4, PHẦN 5,...), TUYỆT ĐỐI KHÔNG ghi kèm đáp án, lời giải hay gợi ý vào trong nội dung các câu hỏi của đề thi. Chỉ trình bày nội dung câu hỏi đơn thuần để học sinh làm bài. Toàn bộ đáp án, lời giải chi tiết, hướng dẫn chấm PHẢI được tách riêng và đặt hoàn toàn ở phần "Hướng dẫn chấm/Đáp án".
+25. NGUYÊN TẮC BÁM SÁT KIẾN THỨC SÁCH GIÁO KHOA (SGK): Nếu giáo viên có cung cấp tài liệu Sách giáo khoa (SGK), bạn BẮT BUỘC phải đối chiếu và lấy 100% ngữ liệu, định nghĩa, kiến thức trọng tâm, dạng câu hỏi, dữ kiện và số liệu chuẩn xác từ tài liệu SGK đó. Tuyệt đối không tự ý đưa kiến thức ngoài luồng hoặc không có trong SGK.
 
-Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệp. Nội dung phải bám sát Phụ lục 3 và Tài liệu mức độ đặc tả được cung cấp.
+Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệp. Nội dung phải bám sát Phụ lục 3, Tài liệu mức độ đặc tả và Sách giáo khoa (SGK) được cung cấp.
 `;
 
       const parts: any[] = [{ text: prompt }];
@@ -678,6 +753,22 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
           });
         }
         parts.push({ text: "Đây là tài liệu mức độ đặc tả của bảng để tham chiếu mức độ cho từng câu hỏi." });
+      }
+
+      if (sgkFileData) {
+        if (sgkFileName.endsWith('.docx') && sgkFileText) {
+          parts.push({ text: `TÀI LIỆU SÁCH GIÁO KHOA (SGK) CHUẨN ĐỂ ĐỐI CHIẾU KIẾN THỨC (trích xuất từ file word): \n${sgkFileText}` });
+        } else if (!sgkFileName.endsWith('.docx')) {
+          parts.push({
+            inlineData: {
+              mimeType: sgkMimeType || "application/pdf",
+              data: sgkFileData,
+            },
+          });
+        }
+        parts.push({ 
+          text: "ĐẶC BIỆT LƯU Ý VỀ TÀI LIỆU SÁCH GIÁO KHOA (SGK): Giáo viên đã đính kèm tài liệu Sách giáo khoa (SGK) chuẩn ở trên. BẮT BUỘC toàn bộ kiến thức, khái niệm, định nghĩa, số liệu, bài tập, câu hỏi và đáp án trong đề kiểm tra PHẢI lấy chuẩn xác 100% từ tài liệu SGK này. Không được đưa kiến thức sai lệch hoặc ngoài nội dung SGK." 
+        });
       }
       
       if (manualInput) {
@@ -1126,11 +1217,18 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">Tải lên Phụ lục 3:</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-slate-700">Tải lên Phụ lục 3:</label>
+                  {fileName && (
+                    <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                      <CheckCircle className="w-3.5 h-3.5" /> Đã chọn file
+                    </span>
+                  )}
+                </div>
                 <div 
                   onClick={triggerFileInput}
-                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors h-[52px] flex items-center justify-center gap-2 ${
-                    fileName ? "border-green-500 bg-green-50" : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"
+                  className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-colors h-[54px] flex items-center justify-between px-4 ${
+                    fileName ? "border-emerald-500 bg-emerald-50/70" : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"
                   }`}
                 >
                   <input
@@ -1141,25 +1239,42 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
                     className="hidden"
                   />
                   {fileName ? (
-                    <>
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <span className="text-sm font-medium text-green-700 truncate max-w-[200px]">{fileName}</span>
-                    </>
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2 truncate">
+                        <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span className="text-sm font-medium text-emerald-900 truncate max-w-[280px]">{fileName}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearFile}
+                        className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-white transition-colors"
+                        title="Xóa file này"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   ) : (
-                    <>
+                    <div className="flex items-center justify-center gap-2 w-full text-slate-500">
                       <Upload className="w-5 h-5 text-slate-400" />
-                      <span className="text-sm text-slate-500">Chọn file Phụ lục 3</span>
-                    </>
+                      <span className="text-sm font-medium">Chọn file Phụ lục 3 (.pdf, .docx, .txt)</span>
+                    </div>
                   )}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">Tải lên Mức độ đặc tả (Tùy chọn):</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-slate-700">Tải lên Mức độ đặc tả (Tùy chọn):</label>
+                  {specFileName && (
+                    <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                      <CheckCircle className="w-3.5 h-3.5" /> Đã chọn file
+                    </span>
+                  )}
+                </div>
                 <div 
                   onClick={triggerSpecFileInput}
-                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors h-[52px] flex items-center justify-center gap-2 ${
-                    specFileName ? "border-green-500 bg-green-50" : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"
+                  className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-colors h-[54px] flex items-center justify-between px-4 ${
+                    specFileName ? "border-emerald-500 bg-emerald-50/70" : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"
                   }`}
                 >
                   <input
@@ -1170,17 +1285,77 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
                     className="hidden"
                   />
                   {specFileName ? (
-                    <>
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <span className="text-sm font-medium text-green-700 truncate max-w-[200px]">{specFileName}</span>
-                    </>
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2 truncate">
+                        <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span className="text-sm font-medium text-emerald-900 truncate max-w-[280px]">{specFileName}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearSpecFile}
+                        className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-white transition-colors"
+                        title="Xóa file này"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   ) : (
-                    <>
+                    <div className="flex items-center justify-center gap-2 w-full text-slate-500">
                       <Upload className="w-5 h-5 text-slate-400" />
-                      <span className="text-sm text-slate-500">Chọn file Mức độ đặc tả</span>
-                    </>
+                      <span className="text-sm font-medium">Chọn file Mức độ đặc tả</span>
+                    </div>
                   )}
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-indigo-600" />
+                    <span>Tài liệu Sách giáo khoa - SGK (Tùy chọn):</span>
+                  </label>
+                  <span className="text-[11px] text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                    Lấy kiến thức chuẩn
+                  </span>
+                </div>
+                <div 
+                  onClick={triggerSgkFileInput}
+                  className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-colors h-[54px] flex items-center justify-between px-4 ${
+                    sgkFileName ? "border-indigo-500 bg-indigo-50/70" : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"
+                  }`}
+                >
+                  <input
+                    ref={sgkFileInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt,.md"
+                    onChange={handleSgkFileUpload}
+                    className="hidden"
+                  />
+                  {sgkFileName ? (
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2 truncate">
+                        <BookOpen className="w-5 h-5 text-indigo-600 shrink-0" />
+                        <span className="text-sm font-medium text-indigo-900 truncate max-w-[280px]">{sgkFileName}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearSgkFile}
+                        className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-white transition-colors"
+                        title="Xóa file SGK này"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 w-full text-slate-500">
+                      <BookOpen className="w-5 h-5 text-indigo-500" />
+                      <span className="text-sm font-medium">Tải file SGK (PDF, Word, TXT để đối chiếu)</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 italic">
+                  💡 Giúp AI lấy chính xác định nghĩa, số liệu, bài đọc và ví dụ chuẩn theo bộ sách giáo khoa đang dạy.
+                </p>
               </div>
             </div>
 
