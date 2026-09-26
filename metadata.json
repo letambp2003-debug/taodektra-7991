@@ -1,0 +1,6 @@
+{
+  "name": "Trợ lý tạo đề kiểm tra theo CV 7991 - GVBM: Lê Tâm - Trường THCS Quang Trung",
+  "description": "Generate exam matrices, specifications, and tests from uploaded documents using Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
