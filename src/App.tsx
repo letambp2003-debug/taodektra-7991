@@ -149,6 +149,15 @@ const loadSavedApiKeys = (): string[] => {
   return [];
 };
 
+interface SgkChapterFile {
+  id: string;
+  name: string;
+  data: string;
+  text: string | null;
+  mimeType: string;
+  size: number;
+}
+
 export default function App() {
   const [fileName, setFileName] = useState("");
   const [fileData, setFileData] = useState<string | null>(null);
@@ -196,10 +205,9 @@ export default function App() {
   const [newKeySingle, setNewKeySingle] = useState("");
   const [bulkKeyInput, setBulkKeyInput] = useState("");
   const [keyInputTab, setKeyInputTab] = useState<"single" | "bulk">("bulk");
-  const [sgkFileName, setSgkFileName] = useState("");
-  const [sgkFileData, setSgkFileData] = useState<string | null>(null);
-  const [sgkFileText, setSgkFileText] = useState<string | null>(null);
-  const [sgkMimeType, setSgkMimeType] = useState<string>("");
+
+  // Quản lý nhiều chương / file Sách giáo khoa (SGK)
+  const [sgkFiles, setSgkFiles] = useState<SgkChapterFile[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const specFileInputRef = useRef<HTMLInputElement>(null);
@@ -364,46 +372,87 @@ export default function App() {
     specFileInputRef.current?.click();
   };
 
-  const handleSgkFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 25 * 1024 * 1024) { // 25MB limit for SGK PDFs/DOCX
-        setError("File Sách giáo khoa (SGK) quá lớn. Vui lòng tải lên file nhỏ hơn 25MB.");
-        return;
+  const handleSgkFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    const newFiles: SgkChapterFile[] = [];
+    let hasError = false;
+
+    for (const file of fileList) {
+      if (file.size > 25 * 1024 * 1024) {
+        setError(`File SGK "${file.name}" quá lớn (>25MB). Vui lòng chọn file nhỏ hơn.`);
+        hasError = true;
+        continue;
       }
-      
-      setSgkFileName(file.name);
-      setSgkMimeType(file.type);
-      setSgkFileText(null);
-      setError(null);
 
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64String = reader.result as string;
-        const base64Data = base64String.split(',')[1];
-        setSgkFileData(base64Data);
+      try {
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64String = reader.result as string;
+            resolve(base64String.split(",")[1]);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
-        // Handle .docx files
-        if (file.name.endsWith('.docx')) {
+        let extractedText: string | null = null;
+        if (file.name.endsWith(".docx")) {
           try {
             const arrayBuffer = await file.arrayBuffer();
             const result = await mammoth.extractRawText({ arrayBuffer });
-            setSgkFileText(result.value);
+            extractedText = result.value;
           } catch (err) {
             console.error("Error extracting text from docx SGK:", err);
-            setError("Không thể trích xuất văn bản từ file .docx SGK.");
           }
         }
-      };
-      reader.onerror = () => {
-        setError("Lỗi khi đọc file SGK. Vui lòng thử lại.");
-      };
-      reader.readAsDataURL(file);
+
+        newFiles.push({
+          id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          name: file.name,
+          data: base64Data,
+          text: extractedText,
+          mimeType: file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/plain"),
+          size: file.size,
+        });
+      } catch (err) {
+        console.error("Lỗi khi đọc file SGK:", err);
+        setError(`Lỗi khi đọc file SGK "${file.name}". Vui lòng thử lại.`);
+        hasError = true;
+      }
+    }
+
+    if (newFiles.length > 0) {
+      setSgkFiles(prev => [...prev, ...newFiles]);
+      if (!hasError) setError(null);
+    }
+
+    if (sgkFileInputRef.current) {
+      sgkFileInputRef.current.value = "";
     }
   };
 
   const triggerSgkFileInput = () => {
     sgkFileInputRef.current?.click();
+  };
+
+  const handleRemoveSgkFile = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSgkFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleClearAllSgkFiles = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSgkFiles([]);
+    if (sgkFileInputRef.current) sgkFileInputRef.current.value = "";
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
   const handleClearFile = (e: React.MouseEvent) => {
@@ -422,15 +471,6 @@ export default function App() {
     setSpecFileText(null);
     setSpecMimeType("");
     if (specFileInputRef.current) specFileInputRef.current.value = "";
-  };
-
-  const handleClearSgkFile = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSgkFileName("");
-    setSgkFileData(null);
-    setSgkFileText(null);
-    setSgkMimeType("");
-    if (sgkFileInputRef.current) sgkFileInputRef.current.value = "";
   };
 
   const handleExportWordAll = async () => {
@@ -755,19 +795,33 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
         parts.push({ text: "Đây là tài liệu mức độ đặc tả của bảng để tham chiếu mức độ cho từng câu hỏi." });
       }
 
-      if (sgkFileData) {
-        if (sgkFileName.endsWith('.docx') && sgkFileText) {
-          parts.push({ text: `TÀI LIỆU SÁCH GIÁO KHOA (SGK) CHUẨN ĐỂ ĐỐI CHIẾU KIẾN THỨC (trích xuất từ file word): \n${sgkFileText}` });
-        } else if (!sgkFileName.endsWith('.docx')) {
+      if (sgkFiles.length > 0) {
+        parts.push({
+          text: `\n=== BỘ TÀI LIỆU SÁCH GIÁO KHOA (SGK) CHUẨN ĐỂ ĐỐI CHIẾU KIẾN THỨC (${sgkFiles.length} chương/tài liệu) ===\n` +
+            `ĐẶC BIỆT LƯU Ý VỀ TÀI LIỆU SÁCH GIÁO KHOA (SGK):\n` +
+            `Giáo viên đã tải lên ${sgkFiles.length} chương/tài liệu Sách giáo khoa (SGK) chuẩn ở dưới đây. ` +
+            `BẮT BUỘC toàn bộ kiến thức, khái niệm, định nghĩa, số liệu, bài tập, câu hỏi và đáp án trong đề kiểm tra PHẢI lấy chuẩn xác 100% từ các tài liệu SGK này. ` +
+            `Tuyệt đối không được đưa kiến thức sai lệch hoặc ngoài nội dung SGK.`
+        });
+
+        sgkFiles.forEach((file, index) => {
           parts.push({
-            inlineData: {
-              mimeType: sgkMimeType || "application/pdf",
-              data: sgkFileData,
-            },
+            text: `\n--- [TÀI LIỆU SGK CHƯƠNG/PHẦN ${index + 1}: ${file.name}] ---`
           });
-        }
+          if (file.name.endsWith('.docx') && file.text) {
+            parts.push({ text: `Nội dung chương "${file.name}" (trích xuất từ file word):\n${file.text}` });
+          } else if (!file.name.endsWith('.docx')) {
+            parts.push({
+              inlineData: {
+                mimeType: file.mimeType || "application/pdf",
+                data: file.data,
+              },
+            });
+          }
+        });
+
         parts.push({ 
-          text: "ĐẶC BIỆT LƯU Ý VỀ TÀI LIỆU SÁCH GIÁO KHOA (SGK): Giáo viên đã đính kèm tài liệu Sách giáo khoa (SGK) chuẩn ở trên. BẮT BUỘC toàn bộ kiến thức, khái niệm, định nghĩa, số liệu, bài tập, câu hỏi và đáp án trong đề kiểm tra PHẢI lấy chuẩn xác 100% từ tài liệu SGK này. Không được đưa kiến thức sai lệch hoặc ngoài nội dung SGK." 
+          text: `\nLƯU Ý HOÀN TẤT VỀ SGK: Đã nạp đủ ${sgkFiles.length} chương/tài liệu SGK chuẩn ở trên. BẮT BUỘC toàn bộ đề kiểm tra, ma trận, bảng đặc tả và đáp án PHẢI bám sát chuẩn mực các chương SGK này.` 
         });
       }
       
@@ -1312,50 +1366,101 @@ Trình bày rõ ràng bằng Markdown, sử dụng bảng biểu chuyên nghiệ
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                     <BookOpen className="w-4 h-4 text-indigo-600" />
-                    <span>Tài liệu Sách giáo khoa - SGK (Tùy chọn):</span>
+                    <span>Tài liệu Sách giáo khoa - SGK (Phân theo từng chương/bài):</span>
                   </label>
-                  <span className="text-[11px] text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
-                    Lấy kiến thức chuẩn
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {sgkFiles.length > 0 && (
+                      <span className="text-[11px] text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                        {sgkFiles.length} chương đã tải
+                      </span>
+                    )}
+                    <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Lấy kiến thức chuẩn
+                    </span>
+                  </div>
                 </div>
-                <div 
-                  onClick={triggerSgkFileInput}
-                  className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-colors h-[54px] flex items-center justify-between px-4 ${
-                    sgkFileName ? "border-indigo-500 bg-indigo-50/70" : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"
-                  }`}
-                >
-                  <input
-                    ref={sgkFileInputRef}
-                    type="file"
-                    accept=".pdf,.doc,.docx,.txt,.md"
-                    onChange={handleSgkFileUpload}
-                    className="hidden"
-                  />
-                  {sgkFileName ? (
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-2 truncate">
-                        <BookOpen className="w-5 h-5 text-indigo-600 shrink-0" />
-                        <span className="text-sm font-medium text-indigo-900 truncate max-w-[280px]">{sgkFileName}</span>
+
+                <input
+                  ref={sgkFileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.txt,.md"
+                  onChange={handleSgkFileUpload}
+                  className="hidden"
+                />
+
+                {sgkFiles.length === 0 ? (
+                  <div 
+                    onClick={triggerSgkFileInput}
+                    className="border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/40 rounded-xl p-3.5 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1 min-h-[58px]"
+                  >
+                    <div className="flex items-center gap-2 text-indigo-600 font-medium text-sm">
+                      <BookOpen className="w-5 h-5 text-indigo-600 shrink-0" />
+                      <span>Tải lên các chương SGK (Chọn được nhiều file: PDF, Word, TXT)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      💡 Sách GK thường chia theo từng chương: Bạn có thể chọn nhiều file cùng lúc (giữ phím Ctrl) hoặc tải bổ sung từng chương.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 border border-indigo-200 bg-indigo-50/40 rounded-xl p-3">
+                    <div className="flex items-center justify-between pb-1 border-b border-indigo-100 text-xs text-indigo-900 font-medium">
+                      <span>Danh sách các chương SGK ({sgkFiles.length} file đã nạp):</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={triggerSgkFileInput}
+                          className="flex items-center gap-1 text-xs text-indigo-700 hover:text-indigo-900 font-semibold bg-white px-2 py-1 rounded-md border border-indigo-200 shadow-xs hover:bg-indigo-50 transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Thêm chương khác</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleClearAllSgkFiles}
+                          className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-medium hover:underline px-1 py-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Xóa tất cả</span>
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleClearSgkFile}
-                        className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-white transition-colors"
-                        title="Xóa file SGK này"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-center gap-2 w-full text-slate-500">
-                      <BookOpen className="w-5 h-5 text-indigo-500" />
-                      <span className="text-sm font-medium">Tải file SGK (PDF, Word, TXT để đối chiếu)</span>
+
+                    <div className="max-h-[160px] overflow-y-auto space-y-1.5 pr-1">
+                      {sgkFiles.map((f, idx) => (
+                        <div
+                          key={f.id}
+                          className="flex items-center justify-between bg-white rounded-lg px-3 py-1.5 border border-indigo-100 shadow-xs hover:border-indigo-300 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="shrink-0 text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                              Chương {idx + 1}
+                            </span>
+                            <FileText className="w-4 h-4 text-indigo-500 shrink-0" />
+                            <span className="text-xs font-medium text-slate-800 truncate max-w-[280px]" title={f.name}>
+                              {f.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              ({formatFileSize(f.size)})
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoveSgkFile(f.id, e)}
+                            className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-red-50 transition-colors"
+                            title={`Xóa ${f.name}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-500 italic">
-                  💡 Giúp AI lấy chính xác định nghĩa, số liệu, bài đọc và ví dụ chuẩn theo bộ sách giáo khoa đang dạy.
-                </p>
+
+                    <p className="text-[11px] text-slate-500 italic pt-0.5">
+                      💡 Toàn bộ {sgkFiles.length} chương trên sẽ được AI nạp đầy đủ để đối chiếu kiến thức, số liệu và bài tập chuẩn xác nhất.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
